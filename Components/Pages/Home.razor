@@ -1,0 +1,291 @@
+@page "/"
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.SignalR.Client
+@using SuperBowlSquares.Models
+@inject NavigationManager Navigation
+@implements IAsyncDisposable
+
+<PageTitle>Super Bowl Squares</PageTitle>
+
+<div class="container">
+    <h1>🏈 Super Bowl Squares 🏈</h1>
+    <p class="subtitle">
+        <span class="live-indicator @(isConnected ? "connected" : "")"></span>
+        @(isConnected ? "Live - Updates in real-time!" : "Connecting...")
+    </p>
+
+    @if (!string.IsNullOrEmpty(statusMessage))
+    {
+        <div class="status-message @statusClass">
+            @statusMessage
+        </div>
+    }
+
+    <div class="controls">
+        <button class="btn" @onclick="ShowRandomizeConfirm">🎲 Randomize Numbers</button>
+        <button class="btn danger" @onclick="ShowResetConfirm">🔄 Reset Board</button>
+    </div>
+
+    <div class="grid-wrapper">
+        <div class="grid-container">
+            <div class="grid">
+                @* Corner cell *@
+                <div class="cell header corner">AFC</div>
+
+                @* Top row - column numbers *@
+                @for (int i = 0; i < 10; i++)
+                {
+                    <div class="cell header">
+                        @(gameState.NumbersAssigned ? gameState.ColNumbers[i].ToString() : "?")
+                    </div>
+                }
+
+                @* Grid squares *@
+                @for (int row = 0; row < 10; row++)
+                {
+                    var currentRow = row;
+                    @* Row number *@
+                    <div class="cell header">
+                        @(gameState.NumbersAssigned ? gameState.RowNumbers[currentRow].ToString() : "?")
+                    </div>
+
+                    @* Squares *@
+                    @for (int col = 0; col < 10; col++)
+                    {
+                        var index = row * 10 + col;
+                        var currentIndex = index;
+                        var owner = gameState.Squares[index];
+                        var cellClass = owner != null ? "cell claimed" : "cell";
+
+                        <div class="@cellClass" @onclick="() => SelectSquare(currentIndex)">
+                            @owner
+                        </div>
+                    }
+                }
+            </div>
+        </div>
+    </div>
+
+    <div class="info-panel">
+        <h3>Board Statistics</h3>
+        <div class="stats">
+            <div class="stat-box">
+                <div class="stat-label">Squares Claimed</div>
+                <div class="stat-value">@gameState.ClaimedCount/100</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">Players</div>
+                <div class="stat-value">@gameState.PlayerCount</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">Numbers Assigned</div>
+                <div class="stat-value">@(gameState.NumbersAssigned ? "Yes" : "No")</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">Connection</div>
+                <div class="stat-value">@(isConnected ? "🟢 Connected" : "🔴 Disconnected")</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@* Claim Modal *@
+@if (showClaimModal)
+{
+    <div class="modal active">
+        <div class="modal-content">
+            <h2>Claim Square</h2>
+            <p>Enter your name to claim this square:</p>
+            <input type="text" @bind="playerName" @bind:event="oninput" 
+                   placeholder="Your name" class="modal-input" 
+                   @onkeypress="HandleKeyPress" />
+            <div class="modal-buttons">
+                <button class="btn" @onclick="ConfirmClaim">Claim</button>
+                <button class="btn secondary" @onclick="CancelClaim">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@* Confirm Dialogs *@
+@if (showRandomizeConfirm)
+{
+    <div class="modal active">
+        <div class="modal-content">
+            <h2>Randomize Numbers?</h2>
+            <p>This will randomly assign numbers 0-9 to rows and columns. Continue?</p>
+            <div class="modal-buttons">
+                <button class="btn" @onclick="ConfirmRandomize">Yes, Randomize</button>
+                <button class="btn secondary" @onclick="() => showRandomizeConfirm = false">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (showResetConfirm)
+{
+    <div class="modal active">
+        <div class="modal-content">
+            <h2>Reset Board?</h2>
+            <p>This will clear the entire board. Are you sure?</p>
+            <div class="modal-buttons">
+                <button class="btn danger" @onclick="ConfirmReset">Yes, Reset</button>
+                <button class="btn secondary" @onclick="() => showResetConfirm = false">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private HubConnection? hubConnection;
+    private GameState gameState = new();
+    private bool isConnected = false;
+    private string statusMessage = string.Empty;
+    private string statusClass = string.Empty;
+
+    private bool showClaimModal = false;
+    private bool showRandomizeConfirm = false;
+    private bool showResetConfirm = false;
+    private int selectedSquare = -1;
+    private string playerName = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        hubConnection = new HubConnectionBuilder()
+            .WithUrl(Navigation.ToAbsoluteUri("/gamehub"))
+            .WithAutomaticReconnect()
+            .Build();
+
+        hubConnection.On<GameState>("ReceiveGameState", (state) =>
+        {
+            gameState = state;
+            InvokeAsync(StateHasChanged);
+        });
+
+        hubConnection.Reconnecting += error =>
+        {
+            isConnected = false;
+            InvokeAsync(StateHasChanged);
+            return Task.CompletedTask;
+        };
+
+        hubConnection.Reconnected += connectionId =>
+        {
+            isConnected = true;
+            InvokeAsync(StateHasChanged);
+            return Task.CompletedTask;
+        };
+
+        hubConnection.Closed += error =>
+        {
+            isConnected = false;
+            InvokeAsync(StateHasChanged);
+            return Task.CompletedTask;
+        };
+
+        await hubConnection.StartAsync();
+        isConnected = true;
+    }
+
+    private void SelectSquare(int index)
+    {
+        if (gameState.Squares[index] != null)
+        {
+            ShowStatus($"This square is already claimed by {gameState.Squares[index]}", true);
+            return;
+        }
+
+        selectedSquare = index;
+        playerName = string.Empty;
+        showClaimModal = true;
+    }
+
+    private async Task ConfirmClaim()
+    {
+        if (string.IsNullOrWhiteSpace(playerName))
+        {
+            ShowStatus("Please enter your name", true);
+            return;
+        }
+
+        if (hubConnection is not null && selectedSquare >= 0)
+        {
+            await hubConnection.SendAsync("ClaimSquare", new SquareClaim
+            {
+                Index = selectedSquare,
+                Name = playerName.Trim()
+            });
+
+            ShowStatus($"Square claimed by {playerName}!");
+            showClaimModal = false;
+            selectedSquare = -1;
+            playerName = string.Empty;
+        }
+    }
+
+    private void CancelClaim()
+    {
+        showClaimModal = false;
+        selectedSquare = -1;
+        playerName = string.Empty;
+    }
+
+    private void HandleKeyPress(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            ConfirmClaim();
+        }
+    }
+
+    private void ShowRandomizeConfirm()
+    {
+        showRandomizeConfirm = true;
+    }
+
+    private async Task ConfirmRandomize()
+    {
+        if (hubConnection is not null)
+        {
+            await hubConnection.SendAsync("RandomizeNumbers");
+            ShowStatus("Numbers randomized!");
+            showRandomizeConfirm = false;
+        }
+    }
+
+    private void ShowResetConfirm()
+    {
+        showResetConfirm = true;
+    }
+
+    private async Task ConfirmReset()
+    {
+        if (hubConnection is not null)
+        {
+            await hubConnection.SendAsync("ResetBoard");
+            ShowStatus("Board reset!");
+            showResetConfirm = false;
+        }
+    }
+
+    private void ShowStatus(string message, bool isError = false)
+    {
+        statusMessage = message;
+        statusClass = isError ? "error" : "success";
+        StateHasChanged();
+
+        Task.Delay(3000).ContinueWith(_ =>
+        {
+            statusMessage = string.Empty;
+            InvokeAsync(StateHasChanged);
+        });
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (hubConnection is not null)
+        {
+            await hubConnection.DisposeAsync();
+        }
+    }
+}
