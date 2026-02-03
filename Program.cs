@@ -1,5 +1,4 @@
 using SuperBowlSquares.Components;
-using SuperBowlSquares.Hubs;
 using SuperBowlSquares.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -12,7 +11,6 @@ builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
-builder.Services.AddSignalR();
 builder.Services.AddSingleton<GameStateService>();
 
 var app = builder.Build();
@@ -32,6 +30,6 @@ app.UseAntiforgery();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
-app.MapHub<GameHub>("/gamehub");
+// SignalR removed - real-time updates now use the singleton GameStateService
 
 app.Run();

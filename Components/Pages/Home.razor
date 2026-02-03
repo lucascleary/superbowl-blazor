@@ -1,17 +1,15 @@
 @page "/"
 @rendermode InteractiveServer
-@using Microsoft.AspNetCore.SignalR.Client
 @using SuperBowlSquares.Models
-@inject NavigationManager Navigation
-@implements IAsyncDisposable
+@inject SuperBowlSquares.Services.GameStateService GameStateService
 
 <PageTitle>Super Bowl Squares</PageTitle>
 
 <div class="container">
     <h1>🏈 Super Bowl Squares 🏈</h1>
     <p class="subtitle">
-        <span class="live-indicator @(isConnected ? "connected" : "")"></span>
-        @(isConnected ? "Live - Updates in real-time!" : "Connecting...")
+        <span class="live-indicator connected"></span>
+        Live - Updates from server state
     </p>
 
     @if (!string.IsNullOrEmpty(statusMessage))
@@ -83,7 +81,7 @@
             </div>
             <div class="stat-box">
                 <div class="stat-label">Connection</div>
-                <div class="stat-value">@(isConnected ? "🟢 Connected" : "🔴 Disconnected")</div>
+                <div class="stat-value">🟢 Server-backed</div>
             </div>
         </div>
     </div>
@@ -137,9 +135,7 @@
 }
 
 @code {
-    private HubConnection? hubConnection;
     private GameState gameState = new();
-    private bool isConnected = false;
     private string statusMessage = string.Empty;
     private string statusClass = string.Empty;
 
@@ -149,42 +145,10 @@
     private int selectedSquare = -1;
     private string playerName = string.Empty;
 
-    protected override async Task OnInitializedAsync()
+    protected override Task OnInitializedAsync()
     {
-        hubConnection = new HubConnectionBuilder()
-            .WithUrl(Navigation.ToAbsoluteUri("/gamehub"))
-            .WithAutomaticReconnect()
-            .Build();
-
-        hubConnection.On<GameState>("ReceiveGameState", (state) =>
-        {
-            gameState = state;
-            InvokeAsync(StateHasChanged);
-        });
-
-        hubConnection.Reconnecting += error =>
-        {
-            isConnected = false;
-            InvokeAsync(StateHasChanged);
-            return Task.CompletedTask;
-        };
-
-        hubConnection.Reconnected += connectionId =>
-        {
-            isConnected = true;
-            InvokeAsync(StateHasChanged);
-            return Task.CompletedTask;
-        };
-
-        hubConnection.Closed += error =>
-        {
-            isConnected = false;
-            InvokeAsync(StateHasChanged);
-            return Task.CompletedTask;
-        };
-
-        await hubConnection.StartAsync();
-        isConnected = true;
+        gameState = GameStateService.GetState();
+        return Task.CompletedTask;
     }
 
     private void SelectSquare(int index)
@@ -200,27 +164,32 @@
         showClaimModal = true;
     }
 
-    private async Task ConfirmClaim()
+    private Task ConfirmClaim()
     {
         if (string.IsNullOrWhiteSpace(playerName))
         {
             ShowStatus("Please enter your name", true);
-            return;
+            return Task.CompletedTask;
         }
 
-        if (hubConnection is not null && selectedSquare >= 0)
+        if (selectedSquare >= 0)
         {
-            await hubConnection.SendAsync("ClaimSquare", new SquareClaim
+            if (GameStateService.ClaimSquare(selectedSquare, playerName.Trim()))
             {
-                Index = selectedSquare,
-                Name = playerName.Trim()
-            });
+                gameState = GameStateService.GetState();
+                ShowStatus($"Square claimed by {playerName}!");
+            }
+            else
+            {
+                ShowStatus($"This square is already claimed", true);
+            }
 
-            ShowStatus($"Square claimed by {playerName}!");
             showClaimModal = false;
             selectedSquare = -1;
             playerName = string.Empty;
         }
+
+        return Task.CompletedTask;
     }
 
     private void CancelClaim()
@@ -230,11 +199,11 @@
         playerName = string.Empty;
     }
 
-    private void HandleKeyPress(KeyboardEventArgs e)
+    private async Task HandleKeyPress(KeyboardEventArgs e)
     {
         if (e.Key == "Enter")
         {
-            ConfirmClaim();
+            await ConfirmClaim();
         }
     }
 
@@ -243,14 +212,13 @@
         showRandomizeConfirm = true;
     }
 
-    private async Task ConfirmRandomize()
+    private Task ConfirmRandomize()
     {
-        if (hubConnection is not null)
-        {
-            await hubConnection.SendAsync("RandomizeNumbers");
-            ShowStatus("Numbers randomized!");
-            showRandomizeConfirm = false;
-        }
+        GameStateService.RandomizeNumbers();
+        gameState = GameStateService.GetState();
+        ShowStatus("Numbers randomized!");
+        showRandomizeConfirm = false;
+        return Task.CompletedTask;
     }
 
     private void ShowResetConfirm()
@@ -258,14 +226,13 @@
         showResetConfirm = true;
     }
 
-    private async Task ConfirmReset()
+    private Task ConfirmReset()
     {
-        if (hubConnection is not null)
-        {
-            await hubConnection.SendAsync("ResetBoard");
-            ShowStatus("Board reset!");
-            showResetConfirm = false;
-        }
+        GameStateService.ResetBoard();
+        gameState = GameStateService.GetState();
+        ShowStatus("Board reset!");
+        showResetConfirm = false;
+        return Task.CompletedTask;
     }
 
     private void ShowStatus(string message, bool isError = false)
@@ -281,11 +248,5 @@
         });
     }
 
-    public async ValueTask DisposeAsync()
-    {
-        if (hubConnection is not null)
-        {
-            await hubConnection.DisposeAsync();
-        }
-    }
+    // No disposal required - no external connections
 }

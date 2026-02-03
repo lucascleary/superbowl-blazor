@@ -1,10 +1,10 @@
 # Super Bowl Squares - Blazor Edition 🏈
 
-A real-time Super Bowl Squares game built with **Blazor Server** and **SignalR** for automatic synchronization across all users!
+A real-time Super Bowl Squares game built with **Blazor Server** using a server-side singleton for shared state across all users!
 
 ## Why Blazor?
 
-- ✅ **Built-in real-time with SignalR** - No extra libraries needed
+- ✅ **Built-in real-time with Blazor Server** - Server-backed shared state
 - ✅ **Strongly typed C#** - Better intellisense and fewer runtime errors
 - ✅ **Automatic state management** - Blazor handles UI updates
 - ✅ **Full .NET ecosystem** - Easy to add databases, auth, etc.
@@ -130,7 +130,7 @@ dotnet publish -c Release
 ```
 ├── Models/           # Data models (GameState, SquareClaim)
 ├── Services/         # Business logic (GameStateService)
-├── Hubs/            # SignalR hub for real-time communication
+├── Hubs/            # (removed) previously used for SignalR
 ├── Components/
 │   ├── Pages/       # Blazor pages (Home.razor)
 │   └── App.razor    # Root component
@@ -139,10 +139,9 @@ dotnet publish -c Release
 
 ## How It Works
 
-1. **SignalR Hub** (`GameHub.cs`) manages all real-time communication
-2. **GameStateService** maintains the game state (thread-safe)
-3. **Blazor Server** automatically syncs UI across all connected clients
-4. When anyone claims a square, everyone sees it instantly via SignalR
+1. **GameStateService** maintains the game state (thread-safe)
+2. **Blazor Server** automatically syncs UI across all connected clients
+3. When anyone claims a square, everyone sees it via the shared server state
 
 ## Features
 
@@ -183,10 +182,9 @@ Then follow [ASP.NET Core Identity docs](https://learn.microsoft.com/en-us/aspne
 dotnet run --urls "http://localhost:5001"
 ```
 
-**SignalR not connecting?**
+**Connection issues?**
 - Check browser console for errors
-- Ensure WebSockets are enabled on your hosting platform
-- Azure requires "Web Sockets" enabled in Configuration
+- Ensure your hosting platform allows persistent connections if needed
 
 **State resets on refresh?**
 - This is normal for in-memory storage
@@ -198,7 +196,7 @@ dotnet run --urls "http://localhost:5001"
 |---------|--------|---------|
 | Language | C# | JavaScript |
 | Type Safety | Strong, compile-time | Weak, runtime |
-| Real-time | SignalR built-in | Needs Socket.io |
+| Real-time | Blazor Server (server-backed) | Needs Socket.io |
 | Performance | Compiled, very fast | Interpreted |
 | Deployment | Azure, IIS native | More options but more setup |
 | Learning curve | Medium (if you know C#) | Easy (if you know JS) |
