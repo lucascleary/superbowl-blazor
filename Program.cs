@@ -4,6 +4,10 @@ using SuperBowlSquares.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Configure port for Railway (and other hosts)
+var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
+builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
+
 // Add services to the container.
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
@@ -17,10 +21,11 @@ var app = builder.Build();
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
-    app.UseHsts();
+    // HTTPS redirection disabled for Railway - they handle SSL
+    // app.UseHsts();
 }
 
-app.UseHttpsRedirection();
+// HTTPS redirection disabled for Railway - they handle SSL at the edge
 app.UseStaticFiles();
 app.UseAntiforgery();
 
